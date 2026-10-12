@@ -7,6 +7,7 @@ name = "k2sqlite"
 version = "0.1.0"
 description = "KANJIDIC2 → SQLite (streaming)"
 readme = "README.md"
+license = "MIT"
 requires-python = ">=3.10"
 dependencies = []
 
@@ -16,11 +17,19 @@ dev = [
   "pytest-cov",
   "ruff",
   "black",
+  "pytest-asyncio>=1.4.0",
+  "oboeru",
 ]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+oboeru = { workspace = true }
 
 [project.scripts]
 k2sqlite = "k2sqlite.cli:app"
 
 [tool.pytest.ini_options]
 addopts = "-q"
-testpaths = ["tests"]
+testpaths = ["tests", "packages/oboeru/tests"]

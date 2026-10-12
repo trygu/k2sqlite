@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "oboeru"
+version = "0.1.0"
+description = "Addictive terminal kanji quiz (TUI) on KANJIDIC2 data"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+dependencies = [
+  "textual>=8.2.8",
+  "pillow>=12",
+]
+
+[project.scripts]
+oboeru = "oboeru.app:main"

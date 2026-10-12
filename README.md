@@ -399,6 +399,33 @@ uv run black src/ tests/
 uv run ruff check src/ tests/
 ```
 
+## oboeru — Kanji Quiz App
+
+The companion quiz app **oboeru** （覚える, "to memorize") lives in
+[`packages/oboeru/`](packages/oboeru/) as its own PyPI package (uv workspace
+member). It is built entirely on the app contract views (`kanji_seed` +
+`distractor_pool`) — a real-world consumer of this database.
+
+```bash
+make build   # if you haven't built the database yet
+make quiz    # or: uv run --package oboeru oboeru
+```
+
+- **Rounds of 10** multiple-choice "kanji → meaning" questions per JLPT level (N5-N1)
+- **Big kanji art**: glyphs are rasterized and drawn with half-block characters
+  (needs a system CJK font; falls back to plain text). Size tunable via `--kanji-size`
+- **Adaptive selection**: unseen and previously missed kanji come back more often
+  (Leitner boxes), mastered kanji fade away
+- **Sessions are saved**: per-kanji correct/wrong + session history persist in
+  `output/quiz_progress.sqlite`; the menu shows lifetime accuracy and mastered count
+- **Juice**: score with streak bonuses 🔥, animated entrances, streak bounce and
+  wrong-answer shake, round summary with your personal review list
+
+Keys: `1-4` or `↑/↓` + `enter` answer, `enter` next question, `q` back/quit.
+
+Install it standalone with `pip install oboeru` or run via `uvx oboeru` — see
+[packages/oboeru/README.md](packages/oboeru/README.md).
+
 ## Example Queries
 
 Here are practical SQL queries for common kanji application scenarios:
