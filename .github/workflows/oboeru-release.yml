@@ -34,7 +34,13 @@ jobs:
         run: uv build --package oboeru
 
       - name: Verify package bundles the database
-        run: uv run python -c "import glob,zipfile; w=glob.glob('dist/*-py3-none-any.whl')[0]; assert any(n.endswith('kanjidic2.sqlite') for n in zipfile.ZipFile(w).namelist()); print('OK: wheel bundles kanjidic2.sqlite')"
+        run: |
+          uv run python -c "
+          import glob, zipfile
+          w = glob.glob('dist/*-py3-none-any.whl')[0]
+          assert any(n.endswith('kanjidic2.sqlite') for n in zipfile.ZipFile(w).namelist())
+          print('OK: wheel bundles kanjidic2.sqlite')
+          "
 
       - name: Upload package as artifact
         uses: actions/upload-artifact@v4
