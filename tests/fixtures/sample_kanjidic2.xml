@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <kanjidic2>
+  <!-- Legacy JLPT 4 -> N5 -->
   <character>
     <literal>水</literal>
     <codepoint>
@@ -14,11 +15,111 @@
       <freq>60</freq>
       <jlpt>4</jlpt>
     </misc>
+    <query_code>
+      <q_code qc_type="skip">1-1-3</q_code>
+      <q_code qc_type="skip" skip_misclass="posn">4-3-1</q_code>
+      <q_code qc_type="sh_desc">0a7.14</q_code>
+      <q_code qc_type="four_corner">1290.0</q_code>
+    </query_code>
     <reading_meaning>
       <rmgroup>
         <reading r_type="ja_on">スイ</reading>
         <reading r_type="ja_kun">みず</reading>
         <meaning>water</meaning>
+      </rmgroup>
+      <nanori>み</nanori>
+      <nanori>みず</nanori>
+    </reading_meaning>
+  </character>
+  <!-- Source order must be preserved: first meaning is primary,
+       first reading is most common -->
+  <character>
+    <literal>日</literal>
+    <codepoint>
+      <cp_value cp_type="ucs">65E5</cp_value>
+    </codepoint>
+    <radical>
+      <rad_value rad_type="classical">72</rad_value>
+    </radical>
+    <misc>
+      <grade>1</grade>
+      <stroke_count>4</stroke_count>
+      <freq>1</freq>
+      <jlpt>4</jlpt>
+    </misc>
+    <reading_meaning>
+      <rmgroup>
+        <reading r_type="ja_on">ニチ</reading>
+        <reading r_type="ja_on">ジツ</reading>
+        <reading r_type="ja_kun">ひ</reading>
+        <meaning>day</meaning>
+        <meaning>sun</meaning>
+        <meaning>Japan</meaning>
+        <meaning m_lang="fr">jour</meaning>
+      </rmgroup>
+    </reading_meaning>
+  </character>
+  <!-- Multiple stroke counts: first is accepted, rest are miscounts.
+       No grade/freq/jlpt -> non-jouyou -> N1 -->
+  <character>
+    <literal>逢</literal>
+    <codepoint>
+      <cp_value cp_type="ucs">9022</cp_value>
+    </codepoint>
+    <radical>
+      <rad_value rad_type="classical">162</rad_value>
+    </radical>
+    <misc>
+      <stroke_count>10</stroke_count>
+      <stroke_count>9</stroke_count>
+      <stroke_count>11</stroke_count>
+    </misc>
+    <reading_meaning>
+      <rmgroup>
+        <reading r_type="ja_on">ホウ</reading>
+        <meaning>meeting</meaning>
+        <meaning>tryst</meaning>
+      </rmgroup>
+    </reading_meaning>
+  </character>
+  <!-- Jouyou (grade 8) with freq but no legacy JLPT -> N2 -->
+  <character>
+    <literal>韓</literal>
+    <codepoint>
+      <cp_value cp_type="ucs">97D3</cp_value>
+    </codepoint>
+    <radical>
+      <rad_value rad_type="classical">178</rad_value>
+    </radical>
+    <misc>
+      <grade>8</grade>
+      <stroke_count>18</stroke_count>
+      <freq>445</freq>
+    </misc>
+    <reading_meaning>
+      <rmgroup>
+        <reading r_type="ja_on">カン</reading>
+        <meaning>Korea</meaning>
+      </rmgroup>
+    </reading_meaning>
+  </character>
+  <!-- Jouyou (grade 8) without freq or legacy JLPT -> N3 -->
+  <character>
+    <literal>柿</literal>
+    <codepoint>
+      <cp_value cp_type="ucs">67FF</cp_value>
+    </codepoint>
+    <radical>
+      <rad_value rad_type="classical">75</rad_value>
+    </radical>
+    <misc>
+      <grade>8</grade>
+      <stroke_count>9</stroke_count>
+    </misc>
+    <reading_meaning>
+      <rmgroup>
+        <reading r_type="ja_kun">かき</reading>
+        <meaning>persimmon</meaning>
       </rmgroup>
     </reading_meaning>
   </character>

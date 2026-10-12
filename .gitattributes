@@ -1,5 +1,5 @@
-# Handle large data files
-data/kanjidic2.xml filter=lfs diff=lfs merge=lfs -text
+# Data file is kept as a plain blob in the repo (no LFS) so builds work offline
+data/kanjidic2.xml binary
 
 # SQLite databases
 *.sqlite binary

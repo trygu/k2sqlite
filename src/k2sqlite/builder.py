@@ -1,7 +1,8 @@
 from __future__ import annotations
+
 import sqlite3
-from xml.etree import ElementTree as ET
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 
 def text(el):
@@ -21,12 +22,11 @@ def _dedup_preserve(items):
 
 def ensure_schema(conn: sqlite3.Connection):
     cur = conn.cursor()
-    cur.executescript(
-        """
+    cur.executescript("""
         PRAGMA journal_mode=WAL;
         PRAGMA synchronous=NORMAL;
         PRAGMA temp_store=MEMORY;
-        PRAGMA foreign_keys=OFF;
+        PRAGMA foreign_keys=ON;  -- validate references during build
 
         CREATE TABLE IF NOT EXISTS kanji(
             literal TEXT PRIMARY KEY,
@@ -37,37 +37,64 @@ def ensure_schema(conn: sqlite3.Connection):
         );
 
         CREATE TABLE IF NOT EXISTS kanji_radical(
-            literal TEXT NOT NULL,
+            literal TEXT NOT NULL REFERENCES kanji(literal),
             rad_value TEXT NOT NULL
         );
 
+        -- seq preserves the KANJIDIC2 source order (most common reading first)
         CREATE TABLE IF NOT EXISTS kanji_reading(
-            literal TEXT NOT NULL,
+            literal TEXT NOT NULL REFERENCES kanji(literal),
             type TEXT NOT NULL CHECK (type IN ('on','kun')),
-            reading TEXT NOT NULL
+            reading TEXT NOT NULL,
+            seq INTEGER NOT NULL
         );
 
+        -- seq preserves the KANJIDIC2 source order (primary meaning first)
         CREATE TABLE IF NOT EXISTS kanji_meaning(
-            literal TEXT NOT NULL,
+            literal TEXT NOT NULL REFERENCES kanji(literal),
             lang TEXT NOT NULL DEFAULT 'en',
-            meaning TEXT NOT NULL
+            meaning TEXT NOT NULL,
+            seq INTEGER NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS kanji_variant(
-            literal TEXT NOT NULL,
+            literal TEXT NOT NULL REFERENCES kanji(literal),
             var_type TEXT NOT NULL,
             value TEXT NOT NULL
+        );
+
+        -- Readings now only associated with names
+        CREATE TABLE IF NOT EXISTS kanji_nanori(
+            literal TEXT NOT NULL REFERENCES kanji(literal),
+            reading TEXT NOT NULL,
+            seq INTEGER NOT NULL
+        );
+
+        -- Lookup codes: skip, skip_misclass, sh_desc, four_corner, deroo.
+        -- SKIP misclassifications (skip_misclass attribute in the XML) are
+        -- stored as qc_type 'skip_misclass' to keep real SKIP codes clean.
+        CREATE TABLE IF NOT EXISTS kanji_query_code(
+            literal TEXT NOT NULL REFERENCES kanji(literal),
+            qc_type TEXT NOT NULL,
+            value TEXT NOT NULL,
+            seq INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_kanji_freq ON kanji(freq);
         CREATE INDEX IF NOT EXISTS idx_reading ON kanji_reading(reading);
         CREATE INDEX IF NOT EXISTS idx_meaning ON kanji_meaning(meaning);
+        CREATE INDEX IF NOT EXISTS idx_query_code ON kanji_query_code(qc_type, value);
 
         -- Unique indexes to prevent duplicates
         CREATE UNIQUE INDEX IF NOT EXISTS ux_reading ON kanji_reading(literal, type, reading);
         CREATE UNIQUE INDEX IF NOT EXISTS ux_meaning ON kanji_meaning(literal, meaning);
         CREATE UNIQUE INDEX IF NOT EXISTS ux_radical ON kanji_radical(literal, rad_value);
         CREATE UNIQUE INDEX IF NOT EXISTS ux_variant ON kanji_variant(literal, var_type, value);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_nanori ON kanji_nanori(literal, reading);
+        CREATE UNIQUE INDEX IF NOT EXISTS ux_query_code ON kanji_query_code(literal, qc_type, value);
+
+        -- Performance index for level-filtered app queries (kanji_seed/distractor_pool)
+        CREATE INDEX IF NOT EXISTS idx_kanji_seed_lvl ON kanji(jlpt) WHERE jlpt IS NOT NULL;
 
         -- Priority view: sorted by frequency -> grade -> jlpt with aggregated data
         CREATE VIEW IF NOT EXISTS kanji_priority AS
@@ -80,13 +107,15 @@ def ensure_schema(conn: sqlite3.Connection):
             (SELECT m.meaning
              FROM kanji_meaning m
              WHERE m.literal = k.literal AND m.lang = 'en'
-             LIMIT 1) as main_meaning,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
-                     FROM kanji_reading r
-                     WHERE r.literal = k.literal AND r.type = 'on'), '') as on_prime,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
-                     FROM kanji_reading r
-                     WHERE r.literal = k.literal AND r.type = 'kun'), '') as kun_prime,
+             ORDER BY m.seq LIMIT 1) as main_meaning,
+            COALESCE((SELECT GROUP_CONCAT(reading, '・')
+                     FROM (SELECT reading FROM kanji_reading r
+                           WHERE r.literal = k.literal AND r.type = 'on'
+                           ORDER BY r.seq)), '') as on_prime,
+            COALESCE((SELECT GROUP_CONCAT(reading, '・')
+                     FROM (SELECT reading FROM kanji_reading r
+                           WHERE r.literal = k.literal AND r.type = 'kun'
+                           ORDER BY r.seq)), '') as kun_prime,
             -- Priority score: freq (lower=better), then grade, then jlpt
             CASE
                 WHEN k.freq IS NOT NULL THEN k.freq
@@ -98,7 +127,7 @@ def ensure_schema(conn: sqlite3.Connection):
         ORDER BY priority_score, k.literal;
 
         -- App contract: kanji_seed view for quiz generation
-        CREATE VIEW kanji_seed AS
+        CREATE VIEW IF NOT EXISTS kanji_seed AS
         SELECT
             k.literal,
             k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
@@ -107,46 +136,45 @@ def ensure_schema(conn: sqlite3.Connection):
             (SELECT m.meaning
              FROM kanji_meaning m
              WHERE m.literal = k.literal AND m.lang = 'en'
-             LIMIT 1) as main_meaning,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
-                     FROM kanji_reading r
-                     WHERE r.literal = k.literal AND r.type = 'on'), '') as on_prime,
-            COALESCE((SELECT GROUP_CONCAT(r.reading, '・')
-                     FROM kanji_reading r
-                     WHERE r.literal = k.literal AND r.type = 'kun'), '') as kun_prime
+             ORDER BY m.seq LIMIT 1) as main_meaning,
+            COALESCE((SELECT GROUP_CONCAT(reading, '・')
+                     FROM (SELECT reading FROM kanji_reading r
+                           WHERE r.literal = k.literal AND r.type = 'on'
+                           ORDER BY r.seq)), '') as on_prime,
+            COALESCE((SELECT GROUP_CONCAT(reading, '・')
+                     FROM (SELECT reading FROM kanji_reading r
+                           WHERE r.literal = k.literal AND r.type = 'kun'
+                           ORDER BY r.seq)), '') as kun_prime
         FROM kanji k
         WHERE k.jlpt IS NOT NULL
         AND EXISTS (SELECT 1 FROM kanji_meaning m WHERE m.literal = k.literal AND m.lang = 'en');
 
         -- App contract: distractor pool for quiz generation
-        CREATE VIEW distractor_pool AS
+        CREATE VIEW IF NOT EXISTS distractor_pool AS
         SELECT
             k.jlpt as lvl,  -- N5=5, N4=4, N3=3, N2=2, N1=1
             m.meaning
         FROM kanji k
         JOIN kanji_meaning m ON k.literal = m.literal
         WHERE k.jlpt IS NOT NULL AND m.lang = 'en';
+        """)
+    conn.commit()
 
-        -- Performance indexes for app queries
-        CREATE INDEX IF NOT EXISTS idx_kanji_seed_lvl ON kanji(jlpt) WHERE jlpt IS NOT NULL;
-        CREATE INDEX IF NOT EXISTS idx_kanji_seed_literal ON kanji(literal);
-        CREATE INDEX IF NOT EXISTS idx_meaning_for_distractor ON kanji_meaning(meaning) WHERE lang = 'en';
-        -- Removed invalid indexes on views
-        -- CREATE INDEX IF NOT EXISTS idx_seed_lvl ON kanji_seed(lvl);
-        -- CREATE INDEX IF NOT EXISTS idx_seed_lit ON kanji_seed(literal);
-        -- CREATE INDEX IF NOT EXISTS idx_pool_lvl ON distractor_pool(lvl);
 
-        -- Finalize database with PRAGMA and ANALYZE
-        PRAGMA journal_mode=WAL;
-        PRAGMA synchronous=NORMAL;
+def _finalize_db(conn: sqlite3.Connection):
+    """Compact, analyze and stamp the database after all data is inserted.
+
+    Running VACUUM/ANALYZE at schema-creation time (i.e. on an empty
+    database) is pointless; doing it here gives the query planner real
+    statistics and ships a compact single-file artifact.
+    """
+    conn.executescript("""
         VACUUM;
         ANALYZE;
-
-        -- Added schema versioning for tracking
-        PRAGMA user_version=1001;
-        """
-    )
-    conn.commit()
+        PRAGMA wal_checkpoint(TRUNCATE);
+        -- Schema version stamp (bump when tables/views change)
+        PRAGMA user_version=1003;
+        """)
 
 
 def _create_empty_record():
@@ -162,21 +190,19 @@ def _create_empty_record():
         "readings_kun": [],
         "meanings_en": [],
         "variants": [],
+        "nanori": [],
+        "query_codes": [],
     }
 
 
-def _parse_integer_field(elem, current_value=None):
-    """Parse integer field from XML element, with optional max comparison."""
+def _parse_integer_field(elem):
+    """Parse integer field from XML element. Returns None if not a number."""
     if elem.text is None:
-        return current_value
+        return None
     text = elem.text.strip()
     if not text.isdigit():
-        return current_value
-
-    value = int(text)
-    if current_value is None:
-        return value
-    return max(current_value, value)
+        return None
+    return int(text)
 
 
 def _process_start_element(tag, rec):
@@ -196,7 +222,10 @@ def _process_end_element(tag, elem, rec):
     elif tag == "grade":
         rec["grade"] = _parse_integer_field(elem)
     elif tag == "stroke_count":
-        rec["stroke_count"] = _parse_integer_field(elem, rec["stroke_count"])
+        # KANJIDIC2 DTD: if several counts are given, the FIRST is the
+        # accepted count; subsequent ones are common miscounts.
+        if rec["stroke_count"] is None:
+            rec["stroke_count"] = _parse_integer_field(elem)
     elif tag == "freq":
         rec["freq"] = _parse_integer_field(elem)
     elif tag == "jlpt":
@@ -209,6 +238,10 @@ def _process_end_element(tag, elem, rec):
         _process_meaning(elem, rec)
     elif tag == "variant":
         _process_variant(elem, rec)
+    elif tag == "nanori":
+        _process_nanori(elem, rec)
+    elif tag == "q_code":
+        _process_query_code(elem, rec)
 
     return rec
 
@@ -250,14 +283,39 @@ def _process_variant(elem, rec):
         rec["variants"].append((vtype, value))
 
 
+def _process_nanori(elem, rec):
+    """Process nanori (name reading) element."""
+    value = text(elem)
+    if value:
+        rec["nanori"].append(value)
+
+
+def _process_query_code(elem, rec):
+    """Process q_code element (SKIP, SH descriptor, four corner, De Roo).
+
+    SKIP entries carrying a skip_misclass attribute are common
+    *mis*classification codes; they are tagged 'skip_misclass' so real
+    SKIP codes stay cleanly queryable.
+    """
+    qtype = elem.get("qc_type")
+    value = text(elem)
+    if not qtype or not value:
+        return
+    if qtype == "skip" and elem.get("skip_misclass"):
+        qtype = "skip_misclass"
+    rec["query_codes"].append((qtype, value))
+
+
 def _calculate_modern_jlpt(grade, freq, old_jlpt):
     """
-    Calculate modern JLPT level (1=N1, 2=N2, 3=N3, 4=N4, 5=N5) based on:
-    - grade: School grade level (1-6)
-    - freq: Frequency rank (lower numbers = more common)
-    - old_jlpt: Old JLPT system from XML (1-4, where 1=hardest)
+    Estimate a modern JLPT level (1=N1 ... 5=N5) for each kanji.
+
+    NOTE: This is a heuristic, not official JLPT data (no official kanji
+    lists exist). Legacy KANJIDIC2 levels (1-4, pre-2010 test) are mapped
+    first; kanji without legacy data are estimated from school grade and
+    frequency so that common jouyou kanji don't all land in N1.
     """
-    # Primary: Use old JLPT data if available
+    # Legacy JLPT levels from KANJIDIC2 (old test: 4=easiest, 1=hardest)
     if old_jlpt == 4:
         return 5  # N5 (easiest)
     elif old_jlpt == 3:
@@ -265,21 +323,21 @@ def _calculate_modern_jlpt(grade, freq, old_jlpt):
     elif old_jlpt == 2:
         return 3  # N3
     elif old_jlpt == 1:
-        return 2  # N2
+        return 2  # N2 (old 1-kyu spanned roughly N1-N2)
 
-    # Secondary: Very high frequency + low grade = N5
+    # No legacy data: estimate from grade + frequency
     if freq is not None and freq <= 200 and grade in (1, 2):
         return 5
-
-    # Secondary: Common kanji in elementary grades = N4
     if freq is not None and freq <= 500 and grade in (3, 4):
         return 4
-
-    # Secondary: Less common but still jouyou = N3
     if freq is not None and freq <= 1000 and grade in (5, 6):
         return 3
 
-    # Everything else = N1 (hardest)
+    # Remaining jouyou kanji (grades 1-6 = kyouiku, 8 = secondary jouyou)
+    if grade in (1, 2, 3, 4, 5, 6, 8):
+        return 2 if freq is not None else 3
+
+    # Non-jouyou kanji (hyougai/jinmeiyou) = genuinely advanced/rare
     return 1
 
 
@@ -302,29 +360,30 @@ def _insert_character_data(cur, rec):
         ),
     )
 
-    # Dedup and insert related data
+    # Dedup and insert related data (seq = order of appearance in the XML,
+    # which for KANJIDIC2 reflects importance: primary meaning/reading first)
     for radical in _dedup_preserve(rec["radicals"]):
         cur.execute(
             "INSERT OR IGNORE INTO kanji_radical(literal, rad_value) VALUES (?,?)",
             (literal, radical),
         )
 
-    for reading in _dedup_preserve(rec["readings_on"]):
+    for seq, reading in enumerate(_dedup_preserve(rec["readings_on"])):
         cur.execute(
-            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
-            (literal, "on", reading),
+            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading, seq) VALUES (?,?,?,?)",
+            (literal, "on", reading, seq),
         )
 
-    for reading in _dedup_preserve(rec["readings_kun"]):
+    for seq, reading in enumerate(_dedup_preserve(rec["readings_kun"])):
         cur.execute(
-            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading) VALUES (?,?,?)",
-            (literal, "kun", reading),
+            "INSERT OR IGNORE INTO kanji_reading(literal, type, reading, seq) VALUES (?,?,?,?)",
+            (literal, "kun", reading, seq),
         )
 
-    for meaning in _dedup_preserve(rec["meanings_en"]):
+    for seq, meaning in enumerate(_dedup_preserve(rec["meanings_en"])):
         cur.execute(
-            "INSERT OR IGNORE INTO kanji_meaning(literal, lang, meaning) VALUES (?,?,?)",
-            (literal, "en", meaning),
+            "INSERT OR IGNORE INTO kanji_meaning(literal, lang, meaning, seq) VALUES (?,?,?,?)",
+            (literal, "en", meaning, seq),
         )
 
     for vtype, value in _dedup_preserve(rec["variants"]):
@@ -333,10 +392,25 @@ def _insert_character_data(cur, rec):
             (literal, vtype, value),
         )
 
+    for seq, reading in enumerate(_dedup_preserve(rec["nanori"])):
+        cur.execute(
+            "INSERT OR IGNORE INTO kanji_nanori(literal, reading, seq) VALUES (?,?,?)",
+            (literal, reading, seq),
+        )
+
+    for seq, (qtype, value) in enumerate(_dedup_preserve(rec["query_codes"])):
+        cur.execute(
+            "INSERT OR IGNORE INTO kanji_query_code(literal, qc_type, value, seq) VALUES (?,?,?,?)",
+            (literal, qtype, value, seq),
+        )
+
 
 def build_sqlite(xml_path: Path, db_path: Path, batch_size: int = 500) -> int:
     """Build SQLite database from KANJIDIC2 XML file."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
+    # Always build from scratch so no stale rows survive from a previous build
+    if db_path.exists():
+        db_path.unlink()
     conn = sqlite3.connect(str(db_path))
     ensure_schema(conn)
     cur = conn.cursor()
@@ -370,5 +444,6 @@ def build_sqlite(xml_path: Path, db_path: Path, batch_size: int = 500) -> int:
 
     if batch:
         conn.commit()
+    _finalize_db(conn)
     conn.close()
     return count

@@ -12,20 +12,29 @@ A fast, memory-efficient tool for converting KANJIDIC2 XML data into a normalize
 - **Data Quality**: Automatic deduplication and unique indexes prevent duplicate data
 - **Foundation-First**: Provides solid database foundation for any kanji application
 - **Export Support**: Basic CSV/JSON export for development and prototyping
-- **Production Artifacts**: Generate complete packages with seed files, lookup maps, and manifest
+- **Production Artifacts**: Generate a complete package with database and manifest (level counts, quality metrics, app contract queries)
+- **Source Order Preserved**: Primary meanings and readings keep their KANJIDIC2 importance order (`seq` column)
 - **Automated CI/CD**: GitHub Actions pipeline with comprehensive artifact generation and testing
-- **Utility Scripts**: Schema documentation, specialized lookups, MCQ generation, and manifest tools
 
 ## Quick Start
 
-```bash
-# 1. Create virtual environment and install
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install -e .
+This project uses [uv](https://docs.astral.sh/uv/) for dependency management.
+`uv run` handles the virtual environment automatically — no manual activation needed.
 
-# 2. Convert KANJIDIC2.xml to SQLite (using included data file)
-k2sqlite build --input data/kanjidic2.xml --db output/kanjidic2.sqlite
+```bash
+# 1. Install uv if you don't have it
+#    https://docs.astral.sh/uv/getting-started/installation/
+
+# 2. Sync the environment (creates .venv, installs dev tools)
+uv sync
+
+# 3. Convert KANJIDIC2.xml to SQLite (using included data file)
+uv run k2sqlite build --input data/kanjidic2.xml --db output/kanjidic2.sqlite
+
+# Or use the Makefile shortcuts (they call uv for you):
+make build       # build the database
+make artifacts   # build + production artifacts
+make test        # run the test suite
 ```
 
 ## Download Pre-built Database
@@ -48,7 +57,7 @@ The database is automatically rebuilt whenever changes are made to the codebase.
 
 ## Database Schema
 
-The generated SQLite database contains the following tables:
+The generated SQLite database contains the following tables and views:
 
 ```mermaid
 erDiagram
@@ -69,18 +78,33 @@ erDiagram
         TEXT literal FK "The kanji character"
         TEXT type "Reading type: on/kun"
         TEXT reading "The actual reading"
+        INTEGER seq "Source order (0=most common)"
     }
 
     kanji_meaning {
         TEXT literal FK "The kanji character"
         TEXT lang "Language code (en)"
         TEXT meaning "English meaning"
+        INTEGER seq "Source order (0=primary)"
     }
 
     kanji_variant {
         TEXT literal FK "The kanji character"
         TEXT var_type "Variant type"
         TEXT value "Variant value"
+    }
+
+    kanji_nanori {
+        TEXT literal FK "The kanji character"
+        TEXT reading "Name reading"
+        INTEGER seq "Source order"
+    }
+
+    kanji_query_code {
+        TEXT literal FK "The kanji character"
+        TEXT qc_type "skip/skip_misclass/sh_desc/four_corner/deroo"
+        TEXT value "Code value"
+        INTEGER seq "Source order"
     }
 
     kanji_priority {
@@ -110,7 +134,12 @@ erDiagram
     kanji ||--o{ kanji_reading : has
     kanji ||--o{ kanji_meaning : means
     kanji ||--o{ kanji_variant : variants
+    kanji ||--o{ kanji_nanori : "name readings"
+    kanji ||--o{ kanji_query_code : "lookup codes"
 ```
+
+All child tables have real `FOREIGN KEY` constraints referencing `kanji(literal)`,
+validated during the build.
 
 ### Core Tables
 - **`kanji`** - Main kanji information
@@ -128,26 +157,54 @@ erDiagram
   - `literal` - The kanji character
   - `type` - Reading type (`'on'` or `'kun'`)
   - `reading` - The actual reading
+  - `seq` - Source order from KANJIDIC2 (0 = most common reading)
 
 - **`kanji_meaning`** - English meanings
   - `literal` - The kanji character
   - `lang` - Language code (defaults to `'en'`)
   - `meaning` - English meaning
+  - `seq` - Source order from KANJIDIC2 (0 = primary meaning)
 
 - **`kanji_variant`** - Character variants
   - `literal` - The kanji character
   - `var_type` - Variant type
   - `value` - Variant value
 
+- **`kanji_nanori`** - Readings used only in names
+  - `literal` - The kanji character
+  - `reading` - The nanori reading
+  - `seq` - Source order from KANJIDIC2
+
+- **`kanji_query_code`** - Shape-based lookup codes
+  - `literal` - The kanji character
+  - `qc_type` - Code system: `skip`, `skip_misclass`, `sh_desc`, `four_corner`, `deroo`
+  - `value` - The code (e.g. SKIP `1-4-7`)
+  - `seq` - Source order from KANJIDIC2
+  - Note: SKIP *misclassification* codes (plausible-but-wrong patterns people
+    search by) are stored as `skip_misclass` so real SKIP codes stay cleanly queryable
+
 ### Indexes
 - `idx_kanji_freq` - Frequency-based lookups
+- `idx_kanji_seed_lvl` - Level-filtered app queries (partial index on `jlpt`)
 - `idx_reading` - Reading-based searches
 - `idx_meaning` - Meaning-based searches
+- `idx_query_code` - Code-based lookups: (qc_type, value)
 - **Unique indexes** prevent duplicates:
   - `ux_reading` - (literal, type, reading)
   - `ux_meaning` - (literal, meaning)
   - `ux_radical` - (literal, rad_value)
   - `ux_variant` - (literal, var_type, value)
+  - `ux_nanori` - (literal, reading)
+  - `ux_query_code` - (literal, qc_type, value)
+
+### Schema Version
+
+The database stamps itself with `PRAGMA user_version` (currently `1003`) after each
+completed build. Bump-check it in your app if you rely on specific tables/views:
+
+```sql
+PRAGMA user_version;  -- 1003 = kanji_nanori + kanji_query_code tables, FK constraints
+```
 
 ### Essential Views
 
@@ -168,17 +225,35 @@ erDiagram
 
 ### Modern JLPT Mapping
 
-The database includes an intelligent JLPT level mapping system that converts historical KANJIDIC2 JLPT data (1-4) into modern JLPT levels (N1-N5). The mapping is materialized in the `lvl` column in `kanji_seed` and `distractor_pool` views. This ensures compatibility with modern learning applications.
+> **Note**: The JLPT levels in this database are *estimates*. There are no official
+> JLPT kanji lists, and KANJIDIC2 only carries levels from the pre-2010 test (1-4).
+> Treat the `jlpt`/`lvl` columns as a sensible difficulty grouping, not ground truth.
 
-- **N5 (Level 5)**: Grade 1-2 kanji + high-frequency characters (easiest)
-- **N4 (Level 4)**: Grade 3-4 kanji + historical JLPT level 4
-- **N3 (Level 3)**: Grade 5-6 kanji + historical JLPT level 3
-- **N2 (Level 2)**: Historical JLPT level 2 + common secondary kanji
-- **N1 (Level 1)**: Historical JLPT level 1 + advanced kanji (hardest)
+The `jlpt` column is computed at build time in two steps:
+
+1. **Legacy levels** from KANJIDIC2 (old test: 4=easiest, 1=hardest) are mapped to the
+   modern scale: old 4→N5, old 3→N4, old 2→N3, old 1→N2 (old 1-kyu spanned roughly N1-N2).
+2. **No legacy data**: the level is estimated from school grade and frequency so that
+   common jouyou kanji don't all pile into N1:
+   - Grade 1-2 + frequency ≤ 200 → **N5**
+   - Grade 3-4 + frequency ≤ 500 → **N4**
+   - Grade 5-6 + frequency ≤ 1000 → **N3**
+   - Other jouyou kanji (grades 1-6, 8) → **N2** with frequency data, **N3** without
+   - Non-jouyou kanji (hyougai/jinmeiyou) → **N1** (genuinely advanced/rare)
+
+Resulting distribution in the `kanji_seed` view (kanji with English meanings):
+
+| Level | Kanji | With frequency data |
+|-------|------:|--------------------:|
+| N5 (easiest) | 103 | 103 |
+| N4 | 182 | 182 |
+| N3 | 813 | 739 |
+| N2 | 1,289 | 1,181 |
+| N1 (hardest) | 7,996 | 296 |
 
 **App Contract**: The `lvl` column in views uses reversed numbering (5=N5, 4=N4, 3=N3, 2=N2, 1=N1) to match common app expectations where higher numbers = easier levels.
 
-This ensures your applications get practical N5 data (338 kanji) for modern Japanese learning, even though the original KANJIDIC2 only had levels 1-4.## Command Line Usage
+## Command Line Usage
 
 ### Build Database
 ```bash
@@ -270,7 +345,7 @@ con = sqlite3.connect('output/kanjidic2.sqlite')
 
 # Get N5 kanji for quiz
 cur = con.execute("SELECT * FROM kanji_seed WHERE lvl=5 ORDER BY RANDOM() LIMIT 1")
-kanji = cur.fetchone()  # ('雨', 5, 950, 1, 'rain', 'ウ', 'さめ・あま-・あめ')
+kanji = cur.fetchone()  # ('雨', 5, 950, 1, 'rain', 'ウ', 'あめ・あま-・-さめ')
 
 # Get distractors for this kanji
 cur = con.execute("SELECT meaning FROM distractor_pool WHERE lvl=5 AND meaning<>? ORDER BY RANDOM() LIMIT 3", (kanji[4],))
@@ -297,24 +372,20 @@ This project uses GitHub Actions to automatically build and test the SQLite data
 - `kanjidic2.sqlite` - The core database file
 - `kanjidic2-artifacts/` - Complete production package containing:
   - `kanjidic2.sqlite` - Database copy
-  - `kanji_seed.csv` - Top 500 kanji (CSV format)
-  - `kanji_seed.json` - Top 500 kanji (JSON format)
-  - `map_char_to_meaning.json` - Character → meanings lookup
-  - `map_char_to_readings.json` - Character → readings lookup
-  - `manifest.json` - File inventory with SHA256 checksums
+  - `manifest.json` - Level counts, quality metrics, SHA256 checksum, and app contract queries
 
 ## Development
 
 ### Running Tests
 ```bash
-# Install development dependencies
-pip install -e .[dev]
+# Environment (includes dev dependencies) is synced by uv
+uv sync
 
 # Run tests
-pytest
+uv run pytest
 
 # Run tests with coverage
-pytest --cov=k2sqlite
+uv run pytest --cov=k2sqlite
 ```
 
 The test suite uses a sample KANJIDIC2.xml file in `tests/fixtures/` to verify the conversion process works correctly.
@@ -322,10 +393,10 @@ The test suite uses a sample KANJIDIC2.xml file in `tests/fixtures/` to verify t
 ### Code Quality
 ```bash
 # Format code
-black src/ tests/
+uv run black src/ tests/
 
 # Lint code
-ruff src/ tests/
+uv run ruff check src/ tests/
 ```
 
 ## Example Queries
@@ -355,6 +426,18 @@ FROM kanji k
 JOIN kanji_meaning m ON k.literal = m.literal
 WHERE m.meaning LIKE '%water%'
 ORDER BY k.freq;
+
+-- Look up kanji by SKIP code (e.g. user identifies pattern 1-1-3 = water radicals)
+SELECT q.literal, k.freq, k.stroke_count
+FROM kanji_query_code q
+JOIN kanji k ON k.literal = q.literal
+WHERE q.qc_type = 'skip' AND q.value = '1-1-3'
+ORDER BY k.freq;
+
+-- Same, but also accept common misclassifications
+SELECT q.literal, q.qc_type
+FROM kanji_query_code q
+WHERE q.qc_type IN ('skip', 'skip_misclass') AND q.value = '1-1-3';
 ```
 
 ### Learning Curriculum Queries
@@ -460,8 +543,8 @@ ORDER BY lvl DESC;
 
 ## Requirements
 
-- Python 3.10+
-- pandas >= 2.2
+- [uv](https://docs.astral.sh/uv/) (manages Python + dependencies; `uv sync` creates `.venv`)
+- Python 3.10+ (standard library only — no runtime dependencies)
 
 ## Why This Architecture?
 

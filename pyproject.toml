@@ -8,16 +8,14 @@ version = "0.1.0"
 description = "KANJIDIC2 → SQLite (streaming)"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = [
-  "pandas>=2.2",
-]
+dependencies = []
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = [
   "pytest>=8",
   "pytest-cov",
   "ruff",
-  "black"
+  "black",
 ]
 
 [project.scripts]
