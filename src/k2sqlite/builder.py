@@ -172,6 +172,10 @@ def _finalize_db(conn: sqlite3.Connection):
         VACUUM;
         ANALYZE;
         PRAGMA wal_checkpoint(TRUNCATE);
+        -- Ship in rollback-journal mode: a WAL-mode database needs
+        -- -wal/-shm sidecar files at open time, which breaks read-only
+        -- consumers (e.g. the DB bundled inside the oboeru wheel).
+        PRAGMA journal_mode=DELETE;
         -- Schema version stamp (bump when tables/views change)
         PRAGMA user_version=1003;
         """)

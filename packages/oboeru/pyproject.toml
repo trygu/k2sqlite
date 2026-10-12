@@ -16,3 +16,8 @@ dependencies = [
 
 [project.scripts]
 oboeru = "oboeru.app:main"
+
+[tool.hatch.build]
+# The KANJIDIC2 database is built into the package before `uv build`
+# (see .github/workflows/oboeru-release.yml); bundle it as package data.
+artifacts = ["src/oboeru/kanjidic2.sqlite"]

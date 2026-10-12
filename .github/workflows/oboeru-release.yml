@@ -1,0 +1,49 @@
+name: Build and publish oboeru
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.3.0
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest
+
+      - name: Build KANJIDIC2 database into the package
+        # Bundled as package data so `pip install oboeru` works out of the box.
+        run: uv run k2sqlite build --input data/kanjidic2.xml --db packages/oboeru/src/oboeru/kanjidic2.sqlite
+
+      - name: Build oboeru package
+        run: uv build --package oboeru
+
+      - name: Verify package bundles the database
+        run: uv run python -c "import glob,zipfile; w=glob.glob('dist/*-py3-none-any.whl')[0]; assert any(n.endswith('kanjidic2.sqlite') for n in zipfile.ZipFile(w).namelist()); print('OK: wheel bundles kanjidic2.sqlite')"
+
+      - name: Upload package as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: oboeru-${{ github.sha }}
+          path: dist/
+          retention-days: 30
+
+      - name: Publish to PyPI
+        # Uses trusted publishing: configure the oboeru project on PyPI to
+        # point at this repo and workflow ("oboeru-release.yml").
+        run: uv publish

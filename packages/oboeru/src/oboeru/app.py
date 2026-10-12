@@ -7,7 +7,7 @@ Progress (per-kanji correct/wrong + session history) is stored in a separate
 SQLite file, so the app remembers you between runs: unseen and previously
 missed kanji come back more often (Leitner boxes).
 
-Run:  oboeru --db /path/to/kanjidic2.sqlite
+Run:  oboeru [--db /path/to/kanjidic2.sqlite]  (defaults to the bundled DB)
 Keys: 1-4 or ↑/↓ + enter answer, enter next, q back/quit.
 """
 
@@ -628,8 +628,8 @@ def main() -> None:
     parser.add_argument(
         "--db",
         type=Path,
-        default=Path("output/kanjidic2.sqlite"),
-        help="path to kanjidic2.sqlite (built by k2sqlite)",
+        default=None,
+        help="path to kanjidic2.sqlite (default: the bundled database)",
     )
     parser.add_argument(
         "--progress",
@@ -644,13 +644,23 @@ def main() -> None:
         help="kanji art size in pixels (terminal rows = size/2; default: 24)",
     )
     args = parser.parse_args()
-    if not args.db.exists():
+    bundled = Path(__file__).with_name("kanjidic2.sqlite")
+    db = args.db or (bundled if bundled.exists() else Path("output/kanjidic2.sqlite"))
+    if not db.exists():
         parser.error(
-            f"{args.db} not found — pass --db (get kanjidic2.sqlite from "
+            f"{db} not found — pass --db (get kanjidic2.sqlite from "
             "github.com/trygu/k2sqlite/releases)"
         )
-    progress = args.progress or args.db.with_name("quiz_progress.sqlite")
-    KanjiQuizApp(args.db, progress, kanji_size=args.kanji_size).run()
+    if args.progress:
+        progress = args.progress
+    elif db == bundled:
+        # The bundled DB lives in site-packages (read-only), so keep progress
+        # in the user's home directory.
+        progress = Path.home() / ".oboeru" / "quiz_progress.sqlite"
+        progress.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        progress = db.with_name("quiz_progress.sqlite")
+    KanjiQuizApp(db, progress, kanji_size=args.kanji_size).run()
 
 
 if __name__ == "__main__":

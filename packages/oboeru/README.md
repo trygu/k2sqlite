@@ -22,28 +22,26 @@ Built with [textual](https://textual.textualize.io/) on
 ```bash
 pip install oboeru
 # or run directly without installing:
-uvx oboeru --db /path/to/kanjidic2.sqlite
+uvx oboeru
 ```
 
-## You need a kanji database
-
-oboeru reads a KANJIDIC2 SQLite database produced by
-[k2sqlite](https://github.com/trygu/k2sqlite) — download
-`kanjidic2.sqlite` from its
-[releases page](https://github.com/trygu/k2sqlite/releases)
-or build it in about a second.
+The KANJIDIC2 database (built by
+[k2sqlite](https://github.com/trygu/k2sqlite)) is bundled with the package,
+so no setup is needed. Pass `--db /path/to/kanjidic2.sqlite` if you have your
+own copy.
 
 ## Run
 
 ```bash
-oboeru --db /path/to/kanjidic2.sqlite
-oboeru --help        # all options (--kanji-size, --progress)
+oboeru
+oboeru --help        # all options (--db, --kanji-size, --progress)
 ```
 
 Keys: `1-4` or `↑/↓` + `enter` answer, `enter` next question, `q` back/quit.
 
-Progress is stored next to the database (`quiz_progress.sqlite`) unless
-`--progress` says otherwise — your streaks survive restarts.
+Progress is stored in `~/.oboeru/quiz_progress.sqlite` (or next to a custom
+`--db` database) unless `--progress` says otherwise — your streaks survive
+restarts.
 
 ## License
 
