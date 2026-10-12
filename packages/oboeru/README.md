@@ -28,9 +28,9 @@ uvx oboeru --db /path/to/kanjidic2.sqlite
 ## You need a kanji database
 
 oboeru reads a KANJIDIC2 SQLite database produced by
-[k2sqlite](https://github.com/trygu/kanjidic2-sqlite-builder) — download
+[k2sqlite](https://github.com/trygu/k2sqlite) — download
 `kanjidic2.sqlite` from its
-[releases page](https://github.com/trygu/kanjidic2-sqlite-builder/releases)
+[releases page](https://github.com/trygu/k2sqlite/releases)
 or build it in about a second.
 
 ## Run

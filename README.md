@@ -2,7 +2,7 @@
 
 A fast, memory-efficient tool for converting KANJIDIC2 XML data into a normalized SQLite database. Built with streaming XML parsing and batch processing for optimal performance.
 
-![Build Database](https://github.com/trygu/kanjidic2-sqlite-builder/workflows/Build%20KANJIDIC2%20SQLite%20Database/badge.svg)
+![Build Database](https://github.com/trygu/k2sqlite/workflows/Build%20KANJIDIC2%20SQLite%20Database/badge.svg)
 
 ## Features
 
@@ -42,12 +42,12 @@ make test        # run the test suite
 Instead of building the database yourself, you can download a pre-built SQLite database from our GitHub releases or CI artifacts:
 
 ### From GitHub Releases
-1. Go to the [Releases page](https://github.com/trygu/kanjidic2-sqlite-builder/releases)
+1. Go to the [Releases page](https://github.com/trygu/k2sqlite/releases)
 2. Download `kanjidic2.sqlite` from the latest release
 3. **NEW**: Also available - `kanjidic2-artifacts.tar.gz` containing the complete production package
 
 ### From CI Artifacts (Latest Build)
-1. Go to [Actions](https://github.com/trygu/kanjidic2-sqlite-builder/actions)
+1. Go to [Actions](https://github.com/trygu/k2sqlite/actions)
 2. Click on the latest successful build
 3. Download artifacts:
    - `kanjidic2-sqlite-*` - Just the SQLite database

@@ -647,7 +647,7 @@ def main() -> None:
     if not args.db.exists():
         parser.error(
             f"{args.db} not found — pass --db (get kanjidic2.sqlite from "
-            "github.com/trygu/kanjidic2-sqlite-builder/releases)"
+            "github.com/trygu/k2sqlite/releases)"
         )
     progress = args.progress or args.db.with_name("quiz_progress.sqlite")
     KanjiQuizApp(args.db, progress, kanji_size=args.kanji_size).run()
