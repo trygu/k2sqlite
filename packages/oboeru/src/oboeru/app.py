@@ -34,6 +34,11 @@ QUESTIONS_PER_ROUND = 10
 MAX_BOX = 4  # Leitner box cap; box >= 3 counts as "mastered"
 LEVEL_NAMES = {5: "N5", 4: "N4", 3: "N3", 2: "N2", 1: "N1"}
 
+# Bundled font first (checked below): identical kanji art on every machine,
+# including bare `uvx oboeru` venvs. System fonts are the fallback for dev
+# checkouts where the bundled font isn't present yet.
+BUNDLED_FONT = Path(__file__).parent / "fonts" / "NotoSansCJKjp-Regular.otf"
+
 # First match wins: macOS, Linux (Noto), Windows
 CJK_FONT_PATHS = [
     "/System/Library/Fonts/Hiragino Sans GB.ttc",
@@ -46,10 +51,10 @@ CJK_FONT_PATHS = [
 
 @lru_cache(maxsize=4)
 def _cjk_font(size: int) -> ImageFont.FreeTypeFont | None:
-    """First available system CJK font at the given pixel size, or None."""
-    for path in CJK_FONT_PATHS:
-        if Path(path).exists():
-            return ImageFont.truetype(path, size)
+    """Bundled CJK font if present, else first available system font, else None."""
+    for path in (BUNDLED_FONT, *CJK_FONT_PATHS):
+        if path.exists():
+            return ImageFont.truetype(str(path), size)
     return None
 
 

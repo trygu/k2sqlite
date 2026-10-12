@@ -6,6 +6,7 @@ no k2sqlite import needed.
 """
 
 import sqlite3
+from pathlib import Path
 
 import pytest
 from oboeru import app as quiz
@@ -154,5 +155,6 @@ def test_kanji_art(quiz_env):
 
 def test_kanji_art_fallback_without_font(quiz_env, monkeypatch):
     monkeypatch.setattr(quiz, "CJK_FONT_PATHS", [])
+    monkeypatch.setattr(quiz, "BUNDLED_FONT", Path("/nonexistent.otf"))
     quiz._cjk_font.cache_clear()
     assert quiz.kanji_art("水") == "水"

@@ -10,7 +10,8 @@ Built with [textual](https://textual.textualize.io/) on
 ## Features
 
 - Rounds of 10 multiple-choice "kanji → meaning" questions per JLPT level (N5–N1)
-- Big half-block kanji art (needs a system CJK font; falls back to plain text)
+- Big half-block kanji art (CJK font is bundled, so it renders everywhere;
+  falls back to plain text only if the font file is missing)
 - Adaptive selection: unseen and previously missed kanji come back more often
   (Leitner boxes), mastered kanji fade away
 - Sessions are saved: per-kanji progress + session history in a small SQLite
