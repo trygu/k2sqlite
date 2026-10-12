@@ -269,7 +269,11 @@ class ProgressDB:
 
 
 class StartScreen(Screen):
-    BINDINGS: ClassVar = [Binding("q", "quit_app", "Quit")]
+    BINDINGS: ClassVar = [
+        Binding("up", "app.focus_previous", show=False),
+        Binding("down", "app.focus_next", show=False),
+        Binding("q", "quit_app", "Quit"),
+    ]
 
     TITLE = "K A N J I   Q U I Z"
 
@@ -291,11 +295,13 @@ class StartScreen(Screen):
                 ],
                 id="levels",
             ),
-            Static("pick a level — press q to quit", id="hint"),
+            Static("pick a level — ↑/↓ + enter to start, q to quit", id="hint"),
             id="start",
         )
 
     def on_mount(self) -> None:
+        # Pre-focus the first level for keyboard play (↑/↓ + enter)
+        self.query_one("#levels Button", Button).focus()
         # Typewriter title + gentle entrances
         self._title_len = 0
         self._title_timer = self.set_interval(0.06, self._type_title)
@@ -347,6 +353,7 @@ class QuizScreen(Screen):
         self.correct_count = 0
         self.missed: list[Question] = []
         self.answered = False
+        self.art_active = False
 
     def compose(self) -> ComposeResult:
         yield Vertical(
@@ -376,7 +383,12 @@ class QuizScreen(Screen):
         q = self.questions[self.index]
         self.answered = False
         kanji = self.query_one("#kanji", Static)
-        kanji.update(kanji_art(q.literal, self.app.kanji_size))
+        art = kanji_art(q.literal, self.app.kanji_size)
+        kanji.update(art)
+        # Remember whether the block art is active: the stats bar shows a
+        # small reference glyph in that case (redundant when the art *is*
+        # the plain glyph).
+        self.art_active = isinstance(art, Text)
         # Fade + slide the kanji in
         kanji.styles.opacity = 0.0
         kanji.styles.animate("opacity", 1.0, duration=0.25)
@@ -397,8 +409,9 @@ class QuizScreen(Screen):
 
     def update_stats(self) -> None:
         flame = f"   🔥 streak {self.streak}" if self.streak >= 2 else ""
+        ref = f"{self.questions[self.index].literal}   " if self.art_active else ""
         self.query_one("#stats", Static).update(
-            f"{LEVEL_NAMES[self.lvl]}"
+            f"{ref}{LEVEL_NAMES[self.lvl]}"
             f"   {self.index + 1}/{len(self.questions)}"
             f"   score {self.score}{flame}"
         )

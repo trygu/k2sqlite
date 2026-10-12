@@ -11,7 +11,8 @@ Built with [textual](https://textual.textualize.io/) on
 
 - Rounds of 10 multiple-choice "kanji → meaning" questions per JLPT level (N5–N1)
 - Big half-block kanji art (CJK font is bundled, so it renders everywhere;
-  falls back to plain text only if the font file is missing)
+  falls back to plain text only if the font file is missing), with a small
+  reference glyph in the stats bar
 - Adaptive selection: unseen and previously missed kanji come back more often
   (Leitner boxes), mastered kanji fade away
 - Sessions are saved: per-kanji progress + session history in a small SQLite
@@ -38,7 +39,8 @@ oboeru
 oboeru --help        # all options (--db, --kanji-size, --progress)
 ```
 
-Keys: `1-4` or `↑/↓` + `enter` answer, `enter` next question, `q` back/quit.
+Keys: `↑/↓` + `enter` pick a level, then `1-4` or `↑/↓` + `enter` to
+answer, `enter` next question, `q` back/quit.
 
 Progress is stored in `~/.oboeru/quiz_progress.sqlite` (or next to a custom
 `--db` database) unless `--progress` says otherwise — your streaks survive

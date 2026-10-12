@@ -134,6 +134,53 @@ async def test_arrow_key_navigation(quiz_env):
 
 
 @pytest.mark.asyncio
+async def test_start_screen_keyboard(quiz_env):
+    db, progress_path = quiz_env
+    app = quiz.KanjiQuizApp(db, progress_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        screen = app.screen
+        assert type(screen).__name__ == "StartScreen"
+
+        # First level button is pre-focused
+        first = screen.query("#levels Button").first()
+        assert app.focused is first
+
+        # Arrows move the highlight between level buttons
+        await pilot.press("down")
+        await pilot.pause()
+        assert app.focused is not first
+        await pilot.press("up")
+        await pilot.pause()
+        assert app.focused is first
+
+        # Enter starts the highlighted level
+        await pilot.press("enter")
+        await pilot.pause()
+        assert type(app.screen).__name__ == "QuizScreen"
+        assert app.screen.lvl == 5
+
+
+@pytest.mark.asyncio
+async def test_reference_glyph(quiz_env):
+    db, progress_path = quiz_env
+    app = quiz.KanjiQuizApp(db, progress_path)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.click("#lvl-5")
+        await pilot.pause()
+        screen = app.screen
+        stats = str(screen.query_one("#stats").content)
+        q = screen.questions[screen.index]
+        if isinstance(quiz.kanji_art(q.literal), str):
+            # Plain-glyph fallback: the reference would just duplicate it
+            assert q.literal not in stats
+        else:
+            # Block art active: stats bar carries the reference glyph
+            assert q.literal in stats
+
+
+@pytest.mark.asyncio
 async def test_round_questions_have_unique_valid_choices(quiz_env):
     db, _ = quiz_env
     kanji = quiz.KanjiDB(db)
